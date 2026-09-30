@@ -12,6 +12,7 @@ import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Date;
 
 /**
@@ -41,25 +42,50 @@ public class THmfBudgetBill implements Serializable {
     @ApiModelProperty(value = "当前所在口次 0..2（业委会核/事务所核/中心核）")
     private Integer nodeNo;
 
-    /** 同口并签办法 0任一人 1两名点齐 */
+    /** 本口签法镜像 0任一人 1两名点齐（算法按口次定死，此列只照当前口写出） */
     @TableField("sign_mode")
-    @ApiModelProperty(value = "同口并签办法 0任一人 1两名点齐")
+    @ApiModelProperty(value = "本口签法镜像 0任一人 1两名点齐（算法按口次定死，此列只照当前口写出）")
     private Integer signMode;
 
-    /** 本口应落名数 */
+    /** 本口应落名数（当前口镜像，业委会2/事务所1/中心1） */
     @TableField("need_count")
-    @ApiModelProperty(value = "本口应落名数")
+    @ApiModelProperty(value = "本口应落名数（当前口镜像，业委会2/事务所1/中心1）")
     private Integer needCount;
 
-    /** 本口已落名数 */
+    /** 本口已落名数（只按署名流水逐笔勾出，不以人手记数为准） */
     @TableField("sign_count")
-    @ApiModelProperty(value = "本口已落名数")
+    @ApiModelProperty(value = "本口已落名数（只按署名流水逐笔勾出，不以人手记数为准）")
     private Integer signCount;
+
+    /** 当前口签认拨次（打回上一档时另起一拨，旧拨留存） */
+    @TableField("cur_round")
+    @ApiModelProperty(value = "当前口签认拨次（打回上一档时另起一拨，旧拨留存）")
+    private Integer curRound;
 
     /** 报批情形 0在核 1已核讫 2已打回 */
     @TableField("status")
     @ApiModelProperty(value = "报批情形 0在核 1已核讫 2已打回")
     private Integer status;
+
+    /** 立单经手人（起单到归档不换，重录亦不改） */
+    @TableField("maker")
+    @ApiModelProperty(value = "立单经手人（起单到归档不换，重录亦不改）")
+    private String maker;
+
+    /** 拨付额（立单时一次取自预算审定额，库存与屏显同源，不许后手填改） */
+    @TableField("pay_amt")
+    @ApiModelProperty(value = "拨付额（立单时一次取自预算审定额，库存与屏显同源，不许后手填改）")
+    private BigDecimal payAmt;
+
+    /** 所属小区底册代号（同年另起新单，不并入旧单） */
+    @TableField("site_no")
+    @ApiModelProperty(value = "所属小区底册代号（同年另起新单，不并入旧单）")
+    private String siteNo;
+
+    /** 本单所属年度 */
+    @TableField("bill_year")
+    @ApiModelProperty(value = "本单所属年度")
+    private Integer billYear;
 
     /** 删除标记 0正常 1删除 */
     @TableField("del_flag")
@@ -141,12 +167,52 @@ public class THmfBudgetBill implements Serializable {
         this.signCount = signCount;
     }
 
+    public Integer getCurRound() {
+        return curRound;
+    }
+
+    public void setCurRound(Integer curRound) {
+        this.curRound = curRound;
+    }
+
     public Integer getStatus() {
         return status;
     }
 
     public void setStatus(Integer status) {
         this.status = status;
+    }
+
+    public String getMaker() {
+        return maker;
+    }
+
+    public void setMaker(String maker) {
+        this.maker = maker;
+    }
+
+    public BigDecimal getPayAmt() {
+        return payAmt;
+    }
+
+    public void setPayAmt(BigDecimal payAmt) {
+        this.payAmt = payAmt;
+    }
+
+    public String getSiteNo() {
+        return siteNo;
+    }
+
+    public void setSiteNo(String siteNo) {
+        this.siteNo = siteNo;
+    }
+
+    public Integer getBillYear() {
+        return billYear;
+    }
+
+    public void setBillYear(Integer billYear) {
+        this.billYear = billYear;
     }
 
     public Integer getDelFlag() {

@@ -45,18 +45,44 @@ CREATE TABLE IF NOT EXISTS t_hmf_budget_bill (
   id bigint NOT NULL COMMENT '主键',
   bill_no varchar(64) DEFAULT NULL COMMENT '预算审定拨付单号',
   node_no int DEFAULT NULL COMMENT '当前所在口次 0..2（业委会核/事务所核/中心核）',
-  sign_mode int DEFAULT NULL COMMENT '同口并签办法 0任一人 1两名点齐',
-  need_count int DEFAULT NULL COMMENT '本口应落名数',
-  sign_count int DEFAULT NULL COMMENT '本口已落名数',
+  sign_mode int DEFAULT NULL COMMENT '本口签法镜像 0任一人 1两名点齐（算法按口次定死，此列只照当前口写出）',
+  need_count int DEFAULT NULL COMMENT '本口应落名数（当前口镜像，业委会2/事务所1/中心1）',
+  sign_count int DEFAULT NULL COMMENT '本口已落名数（只按署名流水逐笔勾出，不以人手记数为准）',
+  cur_round int DEFAULT '1' COMMENT '当前口签认拨次（打回上一档时另起一拨，旧拨留存）',
   status int DEFAULT NULL COMMENT '报批情形 0在核 1已核讫 2已打回',
+  maker varchar(64) DEFAULT NULL COMMENT '立单经手人（起单到归档不换，重录亦不改）',
+  pay_amt decimal(12,2) DEFAULT NULL COMMENT '拨付额（立单时一次取自预算审定额，库存与屏显同源，不许后手填改）',
+  site_no varchar(64) DEFAULT NULL COMMENT '所属小区底册代号（同年另起新单，不并入旧单）',
+  bill_year int DEFAULT NULL COMMENT '本单所属年度',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者（实际操作人，随事务续名）',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  UNIQUE KEY uk_bill_no (bill_no),
+  KEY idx_site_year (site_no, bill_year),
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预算审定拨付核签单';
+
+-- 署名流水：一笔一行、只添不删不抹。新旧两拨（打回前/补签）以 round_no 分存，各自留名留时。
+CREATE TABLE IF NOT EXISTS t_hmf_budget_sign (
+  id bigint NOT NULL COMMENT '主键',
+  bill_id bigint NOT NULL COMMENT '所属预算审定拨付核签单',
+  node_no int DEFAULT NULL COMMENT '落名口次 0业委会 1事务所 2中心',
+  round_no int DEFAULT NULL COMMENT '该口第几拨签名（打回重走添新拨，旧拨保留）',
+  signer varchar(64) DEFAULT NULL COMMENT '实际署名（操作）人，逐笔实记，不许笼统记成固定一人',
+  action int DEFAULT '0' COMMENT '本笔动作 0签认 1打回',
+  sign_time datetime DEFAULT NULL COMMENT '落笔时刻',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
-  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  remark varchar(500) DEFAULT NULL COMMENT '备注（打回事由等）',
+  KEY idx_bill (bill_id, node_no, round_no),
   PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预算审定拨付核签单';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预算审定拨付核签署名流水';
 
 CREATE TABLE IF NOT EXISTS t_hmf_cycle_task (
   id bigint NOT NULL COMMENT '主键',
