@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('拨付核签台账')"/>
+</head>
+<body class="pear-container">
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" action="">
+            <div class="layui-form-item">
+                <label class="layui-form-label">核签单号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="billNo" placeholder="" class="layui-input">
+                </div>
+                <label class="layui-form-label">底册代号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="siteNo" placeholder="" class="layui-input">
+                </div>
+                <label class="layui-form-label">情形</label>
+                <div class="layui-input-inline">
+                    <select name="status">
+                        <option value="">全部</option>
+                        <option value="0">在核</option>
+                        <option value="1">已核讫</option>
+                        <option value="2">已打回</option>
+                    </select>
+                </div>
+                <button class="pear-btn pear-btn-md pear-btn-primary" lay-submit lay-filter="budget-query">
+                    <i class="layui-icon layui-icon-search"></i>
+                    查询
+                </button>
+                <button type="reset" class="pear-btn pear-btn-md">
+                    <i class="layui-icon layui-icon-refresh"></i>
+                    重置
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="layui-card">
+    <div class="layui-card-body">
+        <table id="budget-table" lay-filter="budget-table"></table>
+    </div>
+</div>
+</body>
+
+<script type="text/html" id="budget-toolbar">
+    <button shiro:hasPermission="hmfBudgetBill:add" class="pear-btn pear-btn-primary pear-btn-md" lay-event="add">
+        <i class="layui-icon layui-icon-add-1"></i>
+        另立新单
+    </button>
+</script>
+
+<script type="text/html" id="budget-bar">
+    <button shiro:hasPermission="hmfBudgetBill:view" class="pear-btn pear-btn-warming pear-btn-sm" lay-event="detail" title="核签/复核">
+        <i class="layui-icon layui-icon-template"></i>
+    </button>
+</script>
+
+<script type="text/html" id="budget-node">
+    {{# if (d.nodeNo == 3) { }}
+    <span class="layui-badge layui-bg-green">{{ d.curNodeName }}</span>
+    {{# } else { }}
+    <span class="layui-badge layui-bg-blue">{{ d.curNodeName }}</span>
+    {{# } }}
+</script>
+
+<script type="text/html" id="budget-mode">
+    {{# if (d.curMode == 1) { }}两笔凑齐{{# } else { }}一笔即可{{# } }}
+</script>
+
+<script type="text/html" id="budget-count">
+    <span>{{ d.curSigned }} / {{ d.curNeed }}</span>
+</script>
+
+<script type="text/html" id="budget-passed">
+    {{# if (d.nodeNo == 3) { }}
+    <span class="layui-badge layui-bg-green">已封单</span>
+    {{# } else if (d.curPassed == 1) { }}
+    <span class="layui-badge layui-bg-green">已过</span>
+    {{# } else { }}
+    <span class="layui-badge layui-bg-orange">候签</span>
+    {{# } }}
+</script>
+
+<script type="text/html" id="budget-status">
+    {{# if (d.status == 1) { }}
+    <span class="layui-badge layui-bg-green">已核讫</span>
+    {{# } else if (d.status == 2) { }}
+    <span class="layui-badge layui-bg-red">已打回</span>
+    {{# } else { }}
+    <span class="layui-badge layui-bg-blue">在核</span>
+    {{# } }}
+</script>
+
+<th:block th:include="include :: footer"/>
+<script>
+    layui.use(['table', 'form', 'jquery'], function () {
+        let table = layui.table;
+        let form = layui.form;
+        let $ = layui.jquery;
+        let MODULE_PATH = rootPath + "/hmfBudgetBill/";
+        let cols = [[
+            {title: 'ID', field: 'id', align: 'center', hide: true},
+            {title: '核签单号', field: 'billNo', align: 'left', width: 200},
+            {title: '底册代号', field: 'siteNo', align: 'left', width: 110},
+            {title: '年度', field: 'billYear', align: 'center', width: 80},
+            {title: '拨付额(元)', field: 'payAmt', align: 'right', width: 120},
+            {title: '当前所在档', field: 'curNodeName', align: 'center', width: 110, toolbar: '#budget-node'},
+            {title: '该档算法', field: 'curMode', align: 'center', width: 100, toolbar: '#budget-mode'},
+            {title: '落笔/应到', field: 'curSigned', align: 'center', width: 100, toolbar: '#budget-count'},
+            {title: '这一档', field: 'curPassed', align: 'center', width: 100, toolbar: '#budget-passed'},
+            {title: '拨次', field: 'roundNo', align: 'center', width: 70},
+            {title: '整单情形', field: 'status', align: 'center', width: 100, toolbar: '#budget-status'},
+            {title: '立单经手人', field: 'drafter', align: 'left', width: 110},
+            {title: '操作', toolbar: '#budget-bar', align: 'center', width: 90}
+        ]];
+
+        table.render({
+            elem: '#budget-table',
+            url: MODULE_PATH + 'list',
+            page: true,
+            method: 'get',
+            cols: cols,
+            skin: 'line',
+            toolbar: '#budget-toolbar',
+            defaultToolbar: ['refresh', 'filter', 'print', 'exports'],
+            where: {orderByColumn: "create_time", isAsc: "desc"}
+        });
+
+        table.on('tool(budget-table)', function (obj) {
+            if (obj.event === 'detail') {
+                window.openDetail(obj.data['id']);
+            }
+        });
+
+        table.on('toolbar(budget-table)', function (obj) {
+            if (obj.event === 'add') {
+                layer.open({
+                    type: 2, title: '另立拨付核签单', shade: 0.1,
+                    area: ['760px', '640px'],
+                    content: MODULE_PATH + 'add'
+                });
+            }
+        });
+
+        form.on('submit(budget-query)', function (data) {
+            table.reload('budget-table', {where: data.field, page: {curr: 1}});
+            return false;
+        });
+
+        window.openDetail = function (id) {
+            layer.open({
+                type: 2, title: '拨付核签 / 复核', shade: 0.1,
+                area: ['960px', '720px'],
+                content: MODULE_PATH + 'detail/' + id
+            });
+        }
+    });
+</script>
+</body>
+</html>

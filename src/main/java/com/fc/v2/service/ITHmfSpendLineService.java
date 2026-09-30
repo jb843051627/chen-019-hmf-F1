@@ -23,6 +23,12 @@ public interface ITHmfSpendLineService {
      */
     int evaluate(String ruleCode, BigDecimal input, Date at);
 
+    /**
+     * 单规则取额：按 ruleCode 在 at 时刻生效的版本，依 input 落到的档返回该档审定额。
+     * 拨付核签单的拨付额只准从这里取，取 null 即视为该线无额可拨，不得手填。
+     */
+    BigDecimal amountOf(String ruleCode, BigDecimal input, Date at);
+
     /** 多规则求值：at 时刻可用规则中优先级最高者的档位；无可用规则返回 0 */
     int evaluateTop(BigDecimal input, Date at);
 

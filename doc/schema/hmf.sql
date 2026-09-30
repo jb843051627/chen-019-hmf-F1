@@ -43,20 +43,86 @@ CREATE TABLE IF NOT EXISTS t_hmf_arch (
 
 CREATE TABLE IF NOT EXISTS t_hmf_budget_bill (
   id bigint NOT NULL COMMENT '主键',
-  bill_no varchar(64) DEFAULT NULL COMMENT '预算审定拨付单号',
-  node_no int DEFAULT NULL COMMENT '当前所在口次 0..2（业委会核/事务所核/中心核）',
-  sign_mode int DEFAULT NULL COMMENT '同口并签办法 0任一人 1两名点齐',
-  need_count int DEFAULT NULL COMMENT '本口应落名数',
-  sign_count int DEFAULT NULL COMMENT '本口已落名数',
-  status int DEFAULT NULL COMMENT '报批情形 0在核 1已核讫 2已打回',
+  bill_no varchar(64) DEFAULT NULL COMMENT '拨付核签单号',
+  site_id bigint DEFAULT NULL COMMENT '所属分户底册id',
+  site_no varchar(64) DEFAULT NULL COMMENT '所属底册代号（立单时自底册誊定，不随底册改版）',
+  bill_year int DEFAULT NULL COMMENT '核签年度（同一小区同一年再来的另起新单，不并单）',
+  rule_code varchar(64) DEFAULT NULL COMMENT '拨付额取数所用支出审定额线代号',
+  pay_amt decimal(12,2) DEFAULT NULL COMMENT '拨付额（自立单时一次性从审定额线算定，屏显与库存同源，禁手填）',
+  drafter varchar(64) DEFAULT NULL COMMENT '立单经手人（起单到归档不变，重录不换；与update_by一格分开）',
+  node_no int DEFAULT '0' COMMENT '当前所在口次 0业委会核 1事务所核 2中心核 3已封单',
+  round_no int DEFAULT '1' COMMENT '签认拨次 首拨为1；每退一档+1，新旧拨署名分存',
+  status int DEFAULT '0' COMMENT '报批情形 0在核 1已核讫 2已打回（重签落笔即回0）',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者（谁实际操作续谁，跟着事务走）',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  UNIQUE KEY uk_bill_no (bill_no),
+  KEY idx_site_year (site_id, bill_year),
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预算审定拨付核签单';
+
+-- 每单三行：业委会(0)/事务所(1)/中心(2)，各档并签算法在建单时定死，不可改。
+-- sign_mode：0一笔即可（头一笔落定本档即过）；1两笔凑齐（两笔都落才算过，只落一笔仍候签）。
+-- sign_count 只记“当前拨次”已落的实笔数，永远由署名流水逐笔 COUNT 回填，不认人手自报数。
+CREATE TABLE IF NOT EXISTS t_hmf_budget_node (
+  id bigint NOT NULL COMMENT '主键',
+  bill_id bigint NOT NULL COMMENT '所属拨付核签单',
+  node_no int NOT NULL COMMENT '口次 0业委会核 1事务所核 2中心核',
+  sign_mode int NOT NULL COMMENT '同口并签办法 0一笔即可 1两笔凑齐（建单定死）',
+  need_count int NOT NULL COMMENT '本档应落名数（与点名册条数一致）',
+  sign_count int NOT NULL DEFAULT '0' COMMENT '本档当前拨次已落名数（逐笔COUNT回填，仅参照用不作判定依据）',
+  passed int NOT NULL DEFAULT '0' COMMENT '本档在当前拨次过没过 0候签 1已过',
+  pass_round int DEFAULT NULL COMMENT '本档最近一次过档所在拨次',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
   remark varchar(500) DEFAULT NULL COMMENT '备注',
+  UNIQUE KEY uk_bill_node (bill_id, node_no),
   PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预算审定拨付核签单';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='拨付核签各档口径与状态';
+
+-- 点名册：每档该哪几个人签，建单时点定，条数须与应落名数相等。
+CREATE TABLE IF NOT EXISTS t_hmf_budget_roster (
+  id bigint NOT NULL COMMENT '主键',
+  bill_id bigint NOT NULL COMMENT '所属拨付核签单',
+  node_no int NOT NULL COMMENT '口次 0业委会核 1事务所核 2中心核',
+  cand_name varchar(64) NOT NULL COMMENT '被点名人姓名',
+  seq_no int NOT NULL DEFAULT '1' COMMENT '本档点名次序',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  UNIQUE KEY uk_bill_node_cand (bill_id, node_no, cand_name),
+  KEY idx_bill_node (bill_id, node_no),
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='拨付核签点名册';
+
+-- 逐笔署名流水：只追加、不删改。退回不抹名字，靠 round_no 把新旧两拨分开存档。
+-- action：1署名 2本档退回；create_by 记实际操作人（后一格，跟着事务走），signer 记落下的署名。
+CREATE TABLE IF NOT EXISTS t_hmf_budget_sign (
+  id bigint NOT NULL COMMENT '主键',
+  bill_id bigint NOT NULL COMMENT '所属拨付核签单',
+  node_no int NOT NULL COMMENT '落名/退回所在口次 0业委会核 1事务所核 2中心核',
+  round_no int NOT NULL COMMENT '第几拨签的（首拨1，退一档+1）',
+  signer varchar(64) NOT NULL COMMENT '署名（须在本档点名册内，逐笔对点名）',
+  action int NOT NULL DEFAULT '1' COMMENT '流水动作 1署名 2退回',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '实际操作人',
+  create_time datetime DEFAULT NULL COMMENT '创建时间（几时补的）',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  KEY idx_bill_node_round (bill_id, node_no, round_no),
+  UNIQUE KEY uk_bill_node_round_signer (bill_id, node_no, round_no, signer, action),
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='拨付核签署名流水（分拨存档）';
 
 CREATE TABLE IF NOT EXISTS t_hmf_cycle_task (
   id bigint NOT NULL COMMENT '主键',
@@ -132,4 +198,22 @@ CREATE TABLE IF NOT EXISTS t_hmf_use_flow (
 INSERT IGNORE INTO t_hmf_arch (id, site_no, site_name, site_type, road_name, th1_max, th2_max, th3_max, status, del_flag, create_by, create_time)
 VALUES (0, 'JZ00', '澜川市分户底册（梧桐里苑小区，在册）', '商品房', '澜川市—河湾区—长街上', 90.00, 144.00, 300.00, 0, 0, 'seed', NOW()),
        (1, 'JZ01', '澜川市分户底册（滨河北里项目，已迁出）', '保障性住房', '澜川市—河湾区—滨河北', 90.00, 144.00, 300.00, 1, 0, 'seed', NOW());
+
+-- 拨付核签菜单与按钮权限（固定大ID，INSERT IGNORE 幂等；授给管理员角色 488243256161730560）
+INSERT IGNORE INTO t_sys_permission
+(id, name, descripion, url, is_blank, pid, perms, type, icon, order_num, visible, create_by, create_time)
+VALUES
+ (910000000000000001, '拨付核签', '拨付核签台账', '/hmfBudgetBill/view', 0, 0, 'hmfBudgetBill:view', 1, 'layui-icon layui-icon-read', 60, 0, 'seed', NOW()),
+ (910000000000000002, '拨付核签台账集合', '拨付核签台账集合', '/hmfBudgetBill/list', 0, 910000000000000001, 'hmfBudgetBill:list', 2, '', NULL, 0, 'seed', NOW()),
+ (910000000000000003, '拨付核签另立新单', '拨付核签另立新单', '/hmfBudgetBill/add', 0, 910000000000000001, 'hmfBudgetBill:add', 2, 'layui-icon layui-icon-add-1', NULL, 0, 'seed', NOW()),
+ (910000000000000004, '拨付核签落名', '当前档落一笔署名', '/hmfBudgetBill/sign', 0, 910000000000000001, 'hmfBudgetBill:sign', 2, 'layui-icon layui-icon-ok', NULL, 0, 'seed', NOW()),
+ (910000000000000005, '拨付核签退回', '当前档退回上一档', '/hmfBudgetBill/reject', 0, 910000000000000001, 'hmfBudgetBill:reject', 2, 'layui-icon layui-icon-return', NULL, 0, 'seed', NOW());
+
+INSERT IGNORE INTO t_sys_permission_role (id, role_id, permission_id, create_by, create_time)
+VALUES
+ (910000000000000101, 488243256161730560, 910000000000000001, 'seed', NOW()),
+ (910000000000000102, 488243256161730560, 910000000000000002, 'seed', NOW()),
+ (910000000000000103, 488243256161730560, 910000000000000003, 'seed', NOW()),
+ (910000000000000104, 488243256161730560, 910000000000000004, 'seed', NOW()),
+ (910000000000000105, 488243256161730560, 910000000000000005, 'seed', NOW());
 

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <th:block th:include="include :: header('拨付核签 / 复核')"/>
+    <style>
+        .node-card {border:1px solid #e6e6e6;border-radius:6px;margin-bottom:12px;overflow:hidden;}
+        .node-card.current {border-color:#1e9fff;box-shadow:0 0 6px rgba(30,159,255,.25);}
+        .node-head {padding:8px 12px;background:#f7f7f7;display:flex;align-items:center;}
+        .node-head .t {font-weight:bold;font-size:15px;margin-right:10px;}
+        .node-body {padding:10px 14px;}
+        .chip {display:inline-block;padding:1px 8px;border-radius:10px;background:#eef4ff;color:#1e6fff;margin:2px 6px 2px 0;font-size:12px;}
+        .chip.signed {background:#e8f7e8;color:#16a34a;}
+        .chip.unsign {background:#f2f2f2;color:#999;}
+        .sign-line {font-size:13px;color:#333;margin:3px 0;}
+        .muted {color:#999;font-size:12px;}
+        .old-round {border-top:1px dashed #ddd;margin-top:6px;padding-top:6px;}
+    </style>
+</head>
+<body class="pear-container" style="padding:12px;">
+<div class="layui-card">
+    <div class="layui-card-body" id="head"></div>
+</div>
+<div id="nodes"></div>
+
+<th:block th:include="include :: footer"/>
+<script>
+    let BILL_ID = [[${billId}]];
+    let MODULE_PATH = rootPath + "/hmfBudgetBill";
+
+    layui.use(['jquery', 'layer', 'form'], function () {
+        let $ = layui.jquery, layer = layui.layer, form = layui.form;
+        let MODE_TEXT = ['一笔即可（头一笔落地即过）', '两笔凑齐（两笔都落才算过）'];
+
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+            });
+        }
+        function statusBadge(bill) {
+            if (bill.nodeNo === 3) return '<span class="layui-badge layui-bg-green">已核讫封单</span>';
+            if (bill.status === 2) return '<span class="layui-badge layui-bg-red">已打回</span>';
+            return '<span class="layui-badge layui-bg-blue">在核</span>';
+        }
+
+        function load() {
+            $.get(MODULE_PATH + '/detailJson', {id: BILL_ID}, function (res) {
+                if (res.code !== 200) { layer.msg(res.msg, {icon: 2}); return; }
+                render(res.data);
+            }, 'json');
+        }
+
+        function render(vo) {
+            let b = vo.bill;
+            let sealed = b.nodeNo === 3;
+            $('#head').html(
+                '<table class="layui-table" style="margin:0;">' +
+                '<tr>' +
+                '<td style="width:130px;">核签单号</td><td>' + esc(b.billNo) + '</td>' +
+                '<td style="width:100px;">底册代号</td><td>' + esc(b.siteNo) + '</td>' +
+                '<td style="width:80px;">年度</td><td>' + esc(b.billYear) + '</td>' +
+                '</tr><tr>' +
+                '<td>拨付额（元）</td><td><b>' + esc(b.payAmt) + '</b><span class="muted">（审定额线取数，只显不录）</span></td>' +
+                '<td>情形</td><td>' + statusBadge(b) + '</td>' +
+                '<td>签认拨次</td><td>第 ' + b.roundNo + ' 拨</td>' +
+                '</tr><tr>' +
+                '<td>立单经手人</td><td><b>' + esc(b.drafter) + '</b><span class="muted">（起单到归档不换，重录不换）</span></td>' +
+                '<td>立单时间</td><td>' + esc(b.createTime) + '</td>' +
+                '<td>最近操作人</td><td>' + esc(b.updateBy || '') + '<span class="muted">（谁操作续谁）</span></td>' +
+                '</tr></table>'
+            );
+
+            // 复查从中心倒着数回业委会；当前所在档高亮在它本来的位置
+            let html = '';
+            for (let i = vo.nodes.length - 1; i >= 0; i--) {
+                html += renderNode(vo.nodes[i], sealed, b.roundNo);
+            }
+            $('#nodes').html(html);
+        }
+
+        function renderNode(n, sealed, curRound) {
+            let signedNames = {};
+            n.signs.forEach(function (s) { signedNames[s.signer] = s; });
+
+            let rosterChips = n.roster.map(function (name) {
+                let on = !!signedNames[name];
+                return '<span class="chip ' + (on ? 'signed' : 'unsign') + '">' + esc(name) + (on ? ' ✓已签' : ' 候签') + '</span>';
+            }).join('');
+
+            let signLines = n.signs.length ? n.signs.map(function (s) {
+                return '<div class="sign-line">✔ ' + esc(s.signer) + ' 落名；操作人：' + esc(s.operator || '') + '；时间：' + esc(s.signTime) + '</div>';
+            }).join('') : '<div class="muted">本拨还没落笔</div>';
+
+            // 旧拨存档：新旧两拨分开，退回前名字一个不抹
+            let oldHtml = '';
+            n.rounds.forEach(function (r) {
+                if (r.roundNo === n.effRound && n.passed === 1) return;
+                if (r.roundNo === curRound) return;
+                let lines = r.signs.map(function (s) {
+                    let tag = s.action === 2 ? '【退回】' : '署名';
+                    return '<div class="sign-line muted">第' + r.roundNo + '拨 · ' + tag + ' ' + esc(s.signer)
+                        + '；操作人：' + esc(s.operator || '') + '；' + esc(s.signTime) + '</div>';
+                }).join('');
+                oldHtml += '<div class="old-round"><div class="muted">—— 第 ' + r.roundNo + ' 拨存档 ——</div>' + lines + '</div>';
+            });
+
+            let headTag = '';
+            if (n.current && !sealed) headTag = '<span class="layui-badge layui-bg-blue" style="margin-left:8px;">当前所在档</span>';
+            let passTag = sealed || n.passed === 1
+                ? '<span class="layui-badge layui-bg-green" style="margin-left:8px;">已过（' + n.signCount + '/' + n.needCount + '）</span>'
+                : '<span class="layui-badge layui-bg-orange" style="margin-left:8px;">候签（' + n.signCount + '/' + n.needCount + '）</span>';
+
+            // 落名操作：只对当前档开；可选项就是本档点名册里本拨还没签的人——逐笔对点名
+            let actionHtml = '';
+            if (n.current && !sealed) {
+                let opts = n.roster.filter(function (nm) { return !signedNames[nm]; })
+                    .map(function (nm) { return '<option value="' + esc(nm) + '">' + esc(nm) + '</option>'; }).join('');
+                actionHtml = '<div style="margin-top:8px;">' +
+                    '<select class="signer-sel" style="width:180px;height:32px;">' +
+                    (opts ? opts : '<option value="">本拨已点齐</option>') + '</select> ' +
+                    '<button class="pear-btn pear-btn-primary pear-btn-sm btn-sign" ' + (opts ? '' : 'disabled') + '>落一笔名</button> ';
+                if (n.nodeNo > 0) {
+                    actionHtml += '<button class="pear-btn pear-btn-danger pear-btn-sm btn-reject">本档退回（只退上一档）</button>';
+                }
+                actionHtml += '</div>';
+            }
+            if (sealed) {
+                actionHtml = '<div class="muted" style="margin-top:6px;">中心认下后单已封住，谁都不能再添名。</div>';
+            }
+
+            return '<div class="node-card' + (n.current && !sealed ? ' current' : '') + '" data-node="' + n.nodeNo + '">' +
+                '<div class="node-head"><span class="t">' + esc(n.nodeName) + '</span>' +
+                '<span class="muted">' + MODE_TEXT[n.signMode] + '</span>' + passTag + headTag + '</div>' +
+                '<div class="node-body">' +
+                '<div><b>点名册（应到 ' + n.needCount + ' 人）：</b>' + rosterChips + '</div>' +
+                '<div style="margin-top:6px;"><b>本拨署名（逐笔勾，系统只认真实落笔，不认自报数）：</b></div>' +
+                signLines + actionHtml + oldHtml +
+                '</div></div>';
+        }
+
+        $('#nodes').on('click', '.btn-sign', function () {
+            let card = $(this).closest('.node-card');
+            let nodeNo = card.data('node');
+            let signer = card.find('.signer-sel').val();
+            if (!signer) { layer.msg('本拨点名册上的人都签过了', {icon: 2}); return; }
+            $.post(MODULE_PATH + '/sign', {id: BILL_ID, nodeNo: nodeNo, signer: signer}, function (res) {
+                if (res.code === 200) { layer.msg(res.msg, {icon: 1, time: 800}); load(); parent.layui.table.reload('budget-table'); }
+                else layer.msg(res.msg, {icon: 2, time: 2500});
+            }, 'json');
+        });
+
+        $('#nodes').on('click', '.btn-reject', function () {
+            let card = $(this).closest('.node-card');
+            let nodeNo = card.data('node');
+            layer.confirm('只退回紧挨着的上一档：先前各档名字不抹，本档及以上在新拨重签。确认退回？',
+                {icon: 3, title: '退回确认'}, function (index) {
+                    layer.close(index);
+                    $.post(MODULE_PATH + '/reject', {id: BILL_ID, nodeNo: nodeNo}, function (res) {
+                        if (res.code === 200) { layer.msg(res.msg, {icon: 1, time: 800}); load(); parent.layui.table.reload('budget-table'); }
+                        else layer.msg(res.msg, {icon: 2, time: 2500});
+                    }, 'json');
+                });
+        });
+
+        load();
+    });
+</script>
+</body>
+</html>

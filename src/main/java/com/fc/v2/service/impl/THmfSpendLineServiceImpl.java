@@ -71,6 +71,19 @@ public class THmfSpendLineServiceImpl implements ITHmfSpendLineService {
     }
 
     @Override
+    public BigDecimal amountOf(String ruleCode, BigDecimal input, Date at) {
+        if (ruleCode == null || ruleCode.trim().isEmpty() || input == null || at == null) {
+            return null;
+        }
+        THmfSpendLine rule = findRule(ruleCode, at);
+        if (rule == null) {
+            return null;
+        }
+        BigDecimal amount = resolveLimit(rule, levelOf(rule, input));
+        return amount == null ? null : amount.setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @Override
     public int evaluateTop(BigDecimal input, Date at) {
         if (input == null || at == null) {
             return 0;
